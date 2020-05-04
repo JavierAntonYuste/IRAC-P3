@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>DASH player	</title>
+		<style>
+			video {
+				width: 640px;
+				height: 360px;
+			}
+		</style>
+	</head>
+	<h1>Generación de videos para streaming y visualización de métricas</h1>
+	<body>
+		<div class="code">
+			<video class="dashjs-player" autoplay controls preload="auto" muted>
+			</video>
+		</div>
+		<div class="code">
+			<p>Video Bitrate: <span id="bitrate"></span> kbps</p>
+ 			<p>Video Buffer: <span id="buffer"></span> seconds</p>
+ 			<p>Video Representation: <span id="representation"></span></p>
+		</div>
+	</body>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/dashjs/2.6.7/dash.all.min.js"></script>
+	<script>
+		document.addEventListener("DOMContentLoaded", function () {
+		init();
+		});
+
+		function init(){
+			var video, player, mpd_url = "./output/stream.mpd";
+
+			video = document.querySelector("video");
+			player = dashjs.MediaPlayer().create();
+			player.initialize(video, mpd_url, true);
+			player.on(dashjs.MediaPlayer.events["PLAYBACK_ENDED"], function() {
+				clearInterval(eventPoller);
+			});
+
+			var eventPoller = setInterval(function() {
+				var streamInfo = player.getActiveStream().getStreamInfo();
+				var dashMetrics = player.getDashMetrics();
+				// var dashAdapter = player.getDashAdapter();
+
+ 				if (dashMetrics && streamInfo) {
+ 					const periodIdx = streamInfo.index;
+ 					var repSwitch = dashMetrics.getCurrentRepresentationSwitch('video', true);
+ 					var bufferLevel = dashMetrics.getCurrentBufferLevel('video', true);
+ 					// var bitrate = repSwitch ? Math.round(dashAdapter.
+ 					// 	getBandwidthForRepresentation(repSwitch.to,
+ 					// 	periodIdx) / 1000) : NaN;
+ 					document.getElementById('buffer').innerText = bufferLevel + " secs";
+ 					document.getElementById('bitrate').innerText = bitrate + " Kbps";
+ 					document.getElementById('representation').innerText = repSwitch.to;
+ 				}
+			}, 500);
+		}
+	</script>
+</html>
