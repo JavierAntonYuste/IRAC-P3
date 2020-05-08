@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Dash Player</title>
+		<style>
+			video {
+				width: 640px;
+				height: 360px;
+			}
+		</style>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/dashjs/3.1.0/dash.all.min.js"></script>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.24.0/moment.min.js"></script>
+		<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.3/Chart.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-streaming@latest/dist/chartjs-plugin-streaming.min.js"></script>
+	</head>
+	<h1>Generación de videos para streaming, visualización de métricas y gestión de DRM</h1>
+	<body>
+		<div class="code">
+			<video class="dashjs-player" autoplay controls preload="auto" muted>
+			</video>
+		</div>
+		<div class="code">
+			<p>Video Bitrate: <span id="bitrate"></span></p>
+ 			<p>Video Buffer: <span id="buffer"></span></p>
+ 			<p>Video Representation: <span id="representation"></span></p>
+		</div>
+		<div class="chart" style="height:490px; width:780px">
+			<canvas id="myChart" ></canvas>
+		</div>
+	</body>
+	<script>
+		document.addEventListener("DOMContentLoaded", function () {
+		init();
+		});
+
+		function init(){
+			var video,
+ 				player,
+ 				mpd_url = "./output/stream.mpd";
+
+			const protData = {
+			"com.widevine.alpha": {
+				"serverURL": "https://drm-widevine-licensing.axtest.net/AcquireLicense",
+				"httpRequestHeaders": {"X-AxDRM-Message": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjoxLCJjb21fa2V5X2lkIjoiYjMzNjRlYjUtNTFmNi00YWUzLThjOTgtMzNjZWQ1ZTMxYzc4IiwibWVzc2FnZSI6eyJ0eXBlIjoiZW50aXRsZW1lbnRfbWVzc2FnZSIsImtleXMiOlt7ImlkIjoiOWViNDA1MGQtZTQ0Yi00ODAyLTkzMmUtMjdkNzUwODNlMjY2IiwiZW5jcnlwdGVkX2tleSI6ImxLM09qSExZVzI0Y3Iya3RSNzRmbnc9PSJ9XX19.4lWwW46k-oWcah8oN18LPj5OLS5ZU-_AQv7fe0JhNjA"
+				}
+			},
+			"org.w3.clearkey": {
+					"clearkeys": {
+						 "oW5AK5BW43HzbTSKpiu3SQ": "hyN9IKGfWKdAwFaE5pm0qg"
+					}
+				},
+				"com.microsoft.playready": {
+					"serverURL": "https://drm-playready-licensing.axtest.net/AcquireLicense",
+					"httpRequestHeaders": {"X-AxDRM-Message": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2ZXJzaW9uIjoxLCJjb21fa2V5X2lkIjoiYjMzNjRlYjUtNTFmNi00YWUzLThjOTgtMzNjZWQ1ZTMxYzc4IiwibWVzc2FnZSI6eyJ0eXBlIjoiZW50aXRsZW1lbnRfbWVzc2FnZSIsImtleXMiOlt7ImlkIjoiOWViNDA1MGQtZTQ0Yi00ODAyLTkzMmUtMjdkNzUwODNlMjY2IiwiZW5jcnlwdGVkX2tleSI6ImxLM09qSExZVzI0Y3Iya3RSNzRmbnc9PSJ9XX19.4lWwW46k-oWcah8oN18LPj5OLS5ZU-_AQv7fe0JhNjA"
+					}
+				}
+		};
+
+			video = document.querySelector("video");
+			player = dashjs.MediaPlayer().create();
+			player.setProtectionData(protData);
+			player.initialize(video, mpd_url, true);
+			player.on(dashjs.MediaPlayer.events["PLAYBACK_ENDED"], function() {
+				clearInterval(eventPoller);
+			});
+
+			var bufferLevel=0;
+			var bitrate=0;
+
+			var eventPoller = setInterval(function() {
+				var streamInfo = player.getActiveStream().getStreamInfo();
+				var dashMetrics = player.getDashMetrics();
+				var dashAdapter = player.getDashAdapter();
+
+ 				if (dashMetrics && streamInfo) {
+ 					const periodIdx = streamInfo.index;
+ 					var repSwitch = dashMetrics.getCurrentRepresentationSwitch('video', true);
+ 					bufferLevel = dashMetrics.getCurrentBufferLevel('video', true);
+ 					bitrate = repSwitch ? Math.round(dashAdapter.
+ 						getBandwidthForRepresentation(repSwitch.to,
+ 						periodIdx) / 1000) : NaN;
+ 					document.getElementById('buffer').innerText = bufferLevel + " secs";
+ 					document.getElementById('bitrate').innerText = bitrate + " Kbps";
+ 					document.getElementById('representation').innerText = repSwitch.to;
+ 				}
+			}, 1000);
+
+			var ctx = document.getElementById('myChart').getContext('2d');
+			var chart = new Chart(ctx, {
+				type: 'line',
+				data: {
+					datasets: [{
+						label: 'Buffer Level',
+						borderColor: 'rgb(255, 99, 132)',
+						backgroundColor: 'rgba(255, 99, 132, 0.5)',
+						yAxisID: 'buffer',
+						data: []
+					}, {
+						label: 'Bitrate',
+						borderColor: 'rgb(54, 162, 235)',
+						backgroundColor: 'rgba(54, 162, 235, 0.5)',
+						yAxisID: 'bitrate',
+						data: []
+
+				}]
+				},
+				options: {
+					scales: {
+						xAxes: [{
+							type: 'realtime',
+							realtime: {
+								onRefresh: function(chart) {
+									chart.data.datasets[0].data.push({
+										x: Date.now(),
+										y: bufferLevel
+									});
+									chart.data.datasets[1].data.push({
+										x: Date.now(),
+										y: bitrate
+									});
+								}
+							},
+							delay: 10000,
+							maxTicksLimit: 25
+						}],
+						yAxes: [
+				      {
+				        id: 'buffer',
+				        type: 'linear',
+				        position: 'left',
+								scaleLabel: {
+					        display: true,
+					        labelString: 'Buffer Level (s)'
+								}
+				      },
+				      {
+				        id: 'bitrate',
+				        type: 'linear',
+				        position: 'right',
+								scaleLabel: {
+									display: true,
+									labelString: 'Bitrate (Kbps)'
+								}
+							}
+				    ]
+					}
+				}
+			});
+
+		}
+	</script>
+
+</html>
